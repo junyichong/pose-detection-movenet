@@ -56,15 +56,28 @@ def calculate_angle_3d(a,b,c):
 
 # print(calculate_angle_3d(a,b,c))
 
+
+# Modify the keypoints to fit the frame
+def modify_keypoints(frame, keypoints):
+    height, width, *_ = frame.shape
+    box_size = max(height, width)
+    modified_keypoints = []
+
+    for y, x, confidence in keypoints[0][0]:
+        # calculate the positions of body parts on the frame
+        modified_x = int(x * box_size - (box_size - width) / 2)
+        modified_y = int(y * box_size - (box_size - height) / 2)
+        modified_keypoints.append((modified_y, modified_x, confidence))
+
+    return modified_keypoints
+
+
 # Draw keypoints
 def draw_keypoints(frame, keypoints, confidence_threshold):
-    y, x, c = frame.shape
-    shaped = np.squeeze(np.multiply(keypoints, [y,x,1]))
-    
-    for kp in shaped:
-        ky, kx, kp_conf = kp
-        if kp_conf > confidence_threshold:
-            cv2.circle(frame, (int(kx), int(ky)), 4, (0,255,0), -1)
+    for y, x, confidence in keypoints:
+        if confidence > confidence_threshold:
+            # draw a point on each body part
+            cv2.circle(frame, (x, y), 4, (0, 255, 0), -1)
 
 EDGES = {
     (0, 1): 'm',
@@ -88,14 +101,11 @@ EDGES = {
 }
 
 # Draw lines between keypoints
-def draw_connections(frame, keypoints, edges, confidence_threshold):
-    y, x, c = frame.shape
-    shaped = np.squeeze(np.multiply(keypoints, [y,x,1]))
-    
+def draw_connections(frame, keypoints, edges, confidence_threshold): 
     for edge, color in edges.items():
         p1, p2 = edge
-        y1, x1, c1 = shaped[p1]
-        y2, x2, c2 = shaped[p2]
+        y1, x1, c1 = modified_keypoints[p1]
+        y2, x2, c2 = modified_keypoints[p2]
         
         if (c1 > confidence_threshold) & (c2 > confidence_threshold):      
             cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 2)
@@ -104,7 +114,7 @@ def draw_connections(frame, keypoints, edges, confidence_threshold):
 interpreter = tf.lite.Interpreter(model_path='lite-model_movenet_singlepose_thunder_3.tflite')
 interpreter.allocate_tensors()
 
-video_path = 'test_videos/run.mp4'
+video_path = 'test_videos/talk.mp4'
 cap = cv2.VideoCapture(video_path)
 
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -132,13 +142,14 @@ while cap.isOpened():
     output_details = interpreter.get_output_details()
     
     # Make predictions 
-    interpreter.set_tensor(input_details[0]['index'], np.array(input_image))
+    interpreter.set_tensor(input_details[0]['index'], input_image.numpy())
     interpreter.invoke()
     keypoints_with_scores = interpreter.get_tensor(output_details[0]['index'])
     
     # Rendering 
-    draw_connections(frame, keypoints_with_scores, EDGES, 0.5)
-    draw_keypoints(frame, keypoints_with_scores, 0.5)
+    modified_keypoints = modify_keypoints(frame, keypoints_with_scores)
+    draw_connections(frame, modified_keypoints, EDGES, 0.3)
+    draw_keypoints(frame, modified_keypoints, 0.3)
     
     cv2.imshow('MoveNet Lightning', frame)
     
